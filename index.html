@@ -93,8 +93,8 @@
 
   .field-row{
     display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
+    gap: 10px;
+    flex-wrap: nowrap;
     align-items: end;
   }
 
@@ -102,7 +102,8 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
-    flex: 1 1 160px;
+    flex: 1 1 0;
+    min-width: 0;
   }
 
   label{
@@ -193,17 +194,23 @@
   }
 
   /* Summary cards */
+  .summary-scroll{
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
   .summary-grid{
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(96px, 1fr));
     gap: 10px;
+    min-width: 320px;
   }
 
   @media (max-width: 480px){
-    .summary-grid{ gap: 8px; }
-    .stat{ padding: 10px 8px; }
-    .stat-label{ font-size: 0.62rem; margin-bottom: 4px; }
-    .stat-value{ font-size: 0.95rem; }
+    .summary-grid{ gap: 6px; min-width: 300px; }
+    .stat{ padding: 8px 6px; }
+    .stat-label{ font-size: 0.56rem; margin-bottom: 3px; letter-spacing: 0.01em; }
+    .stat-value{ font-size: 0.8rem; }
   }
 
   .stat{
@@ -226,6 +233,9 @@
     font-size: 1.3rem;
     font-variant-numeric: tabular-nums;
     color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .stat-value.gold{ color: var(--gold); }
@@ -588,6 +598,7 @@
 
   <div class="card">
     <h2>Resumen</h2>
+    <div class="summary-scroll">
     <div class="summary-grid">
       <div class="stat">
         <div class="stat-label">Total aportado</div>
@@ -613,6 +624,7 @@
         <div class="stat-label">Total retirado neto</div>
         <div class="stat-value" id="statRetiradoNeto">—</div>
       </div>
+    </div>
     </div>
     <p class="hint" style="margin-top: 16px;">Los impuestos se calculan por los tramos vigentes del IRPF sobre la base del ahorro en España — 19% hasta 6.000 €, 21% hasta 50.000 €, 23% hasta 200.000 €, 27% hasta 300.000 € y 30% en adelante — aplicados a la ganancia de cada retiro por separado. No tiene en cuenta otros rendimientos del ahorro que declares ese mismo año.</p>
   </div>
@@ -1025,6 +1037,7 @@ function renderChart(rows) {
   overlay.setAttribute('height', plotH);
   overlay.setAttribute('fill', 'transparent');
   overlay.style.cursor = 'crosshair';
+  overlay.style.touchAction = 'none';
 
   svg.appendChild(gridGroup);
   svg.appendChild(areaPath);
@@ -1079,6 +1092,22 @@ function renderChart(rows) {
 
   overlay.addEventListener('mousemove', (e) => showTooltip(e.clientX));
   overlay.addEventListener('mouseleave', () => {
+    hoverLine.style.display = 'none';
+    dotCapital.style.display = 'none';
+    dotNeto.style.display = 'none';
+    dotAportado.style.display = 'none';
+    tooltip.style.display = 'none';
+  });
+
+  function handleTouch(e) {
+    e.preventDefault();
+    const touch = e.touches[0] || e.changedTouches[0];
+    if (touch) showTooltip(touch.clientX);
+  }
+
+  overlay.addEventListener('touchstart', handleTouch, { passive: false });
+  overlay.addEventListener('touchmove', handleTouch, { passive: false });
+  overlay.addEventListener('touchend', () => {
     hoverLine.style.display = 'none';
     dotCapital.style.display = 'none';
     dotNeto.style.display = 'none';
