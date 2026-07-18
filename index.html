@@ -202,14 +202,14 @@
   .summary-grid{
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 14px;
+    gap: 8px;
   }
 
   .stat{
     background: #0d0d0d;
     border: 1px solid var(--panel-border);
     border-radius: 8px;
-    padding: 16px;
+    padding: 16px 10px;
   }
 
   .stat-label{
@@ -222,7 +222,7 @@
 
   .stat-value{
     font-family: var(--mono);
-    font-size: 1.3rem;
+    font-size: 1.1rem;
     font-variant-numeric: tabular-nums;
     color: var(--text);
     white-space: nowrap;
@@ -593,7 +593,7 @@
     <div class="summary-scroll">
     <div class="summary-grid">
       <div class="stat">
-        <div class="stat-label">Total aportado</div>
+        <div class="stat-label">Total<br>aportado</div>
         <div class="stat-value" id="statAportado">—</div>
       </div>
       <div class="stat">
