@@ -201,16 +201,8 @@
 
   .summary-grid{
     display: grid;
-    grid-template-columns: repeat(3, minmax(96px, 1fr));
-    gap: 10px;
-    min-width: 320px;
-  }
-
-  @media (max-width: 480px){
-    .summary-grid{ gap: 6px; min-width: 300px; }
-    .stat{ padding: 8px 6px; }
-    .stat-label{ font-size: 0.56rem; margin-bottom: 3px; letter-spacing: 0.01em; }
-    .stat-value{ font-size: 0.8rem; }
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
   }
 
   .stat{
@@ -605,16 +597,16 @@
         <div class="stat-value" id="statAportado">—</div>
       </div>
       <div class="stat">
+        <div class="stat-label">Impuestos pagados</div>
+        <div class="stat-value rust" id="statImpuestos">—</div>
+      </div>
+      <div class="stat">
         <div class="stat-label">Capital final bruto</div>
         <div class="stat-value gold" id="statBruto">—</div>
       </div>
       <div class="stat">
         <div class="stat-label">Capital final neto</div>
         <div class="stat-value blue" id="statNeto">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Impuestos pagados</div>
-        <div class="stat-value rust" id="statImpuestos">—</div>
       </div>
       <div class="stat">
         <div class="stat-label">Total retirado bruto</div>
