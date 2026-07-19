@@ -365,6 +365,8 @@
 
   tbody tr:hover{ background: #191919; }
   tbody tr.clamped td{ color: var(--rust); }
+  tbody tr.year-close{ background: #16130a; }
+  tbody tr.year-close td:last-child, tbody tr.year-close td:nth-last-child(2){ color: var(--gold); }
 
   .table-scroll{
     max-height: 420px;
@@ -583,7 +585,7 @@
       <button class="btn" id="addRetiro" type="button">+ Añadir retiro</button>
       <p class="hint">Cada retiro puntual se repite todos los años en el mes indicado (1-12). Por ejemplo, mes 12 con una duración de 2 años retira en el mes 12 y en el mes 24.</p>
 
-      <p class="hint">El impuesto sobre la plusvalía de cada retiro se calcula automáticamente (ver desglose abajo).</p>
+      <p class="hint">El impuesto ya no se aplica al retirar: se paga automáticamente cada año sobre la ganancia generada, se retire o no (ver bloque 5).</p>
     </div>
 
     <div class="block">
@@ -614,28 +616,28 @@
         <div class="stat-value" id="statAportado">—</div>
       </div>
       <div class="stat">
+        <div class="stat-label">Total retirado</div>
+        <div class="stat-value" id="statRetirado">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Rendimiento generado (bruto)</div>
+        <div class="stat-value" id="statRendimientoBruto">—</div>
+      </div>
+      <div class="stat">
         <div class="stat-label">Impuestos pagados</div>
         <div class="stat-value rust" id="statImpuestos">—</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Capital final bruto</div>
-        <div class="stat-value gold" id="statBruto">—</div>
+        <div class="stat-label">Rendimiento neto</div>
+        <div class="stat-value blue" id="statRendimientoNeto">—</div>
       </div>
       <div class="stat">
-        <div class="stat-label">Capital final neto</div>
-        <div class="stat-value blue" id="statNeto">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Total retirado bruto</div>
-        <div class="stat-value" id="statRetiradoBruto">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Total retirado neto</div>
-        <div class="stat-value" id="statRetiradoNeto">—</div>
+        <div class="stat-label">Capital final</div>
+        <div class="stat-value gold" id="statCapitalFinal">—</div>
       </div>
     </div>
     </div>
-    <p class="hint" style="margin-top: 16px;">Los impuestos se calculan por los tramos vigentes del IRPF sobre la base del ahorro en España — 19% hasta 6.000 €, 21% hasta 50.000 €, 23% hasta 200.000 €, 27% hasta 300.000 € y 30% en adelante — aplicados a la ganancia de cada retiro por separado. No tiene en cuenta otros rendimientos del ahorro que declares ese mismo año.</p>
+    <p class="hint" style="margin-top: 16px;">Cada mes generas una ganancia (o pérdida) que se suma a lo largo del año. Al cerrar cada año (mes 12, 24, 36...) se calcula el impuesto por los tramos vigentes del IRPF sobre la base del ahorro en España — 19% hasta 6.000 €, 21% hasta 50.000 €, 23% hasta 200.000 €, 27% hasta 300.000 € y 30% en adelante — aplicado sobre la ganancia neta de ese año. Los retiros ya no tributan aparte: ese dinero ya pagó su impuesto cuando se generó.</p>
   </div>
 
   <div class="warning-banner" id="patrimonioWarning">
@@ -652,9 +654,9 @@
   <div class="card">
     <h2>Evolución del capital</h2>
     <div class="chart-legend">
-      <span><i class="legend-swatch" style="background:#cfa93c;"></i>Capital total (bruto)</span>
-      <span><i class="legend-swatch" style="background:#5b9bd5;"></i>Capital total (neto)</span>
+      <span><i class="legend-swatch" style="background:#cfa93c;"></i>Capital total</span>
       <span><i class="legend-swatch" style="background:#6b6b6b;"></i>Aportado acumulado</span>
+      <span><i class="legend-swatch" style="background:transparent;border:2px solid var(--rust);border-radius:50%;width:10px;height:10px;"></i>Cierre de año (impuesto pagado)</span>
     </div>
     <div class="chart-container" id="chartContainer"></div>
   </div>
@@ -668,10 +670,9 @@
             <th>Mes</th>
             <th>Inicio mes</th>
             <th>Aportación</th>
-            <th>Retiro bruto</th>
-            <th>Impuesto</th>
-            <th>Retiro neto</th>
+            <th>Retiro</th>
             <th>Rendimiento</th>
+            <th>Impuesto (cierre año)</th>
             <th>Fin mes</th>
           </tr>
         </thead>
@@ -824,12 +825,15 @@ function simular() {
 
   let capital = capitalInicial;
   let aportadoNominal = capitalInicial;
-  let aportadoBaseFiscal = capitalInicial;
   let totalAportado = capitalInicial;
-  let totalRetiradoBruto = 0;
-  let totalRetiradoNeto = 0;
+  let totalRetirado = 0;
   let totalImpuestos = 0;
+  let rendimientoBrutoTotal = 0;
   const desgloseTramos = TRAMOS_AHORRO.map(() => ({ base: 0, impuesto: 0 }));
+  const eventosAnuales = [];
+
+  let gananciaAnioActual = 0;
+  let inicioAnioMes = 1;
 
   const rows = [];
 
@@ -844,101 +848,88 @@ function simular() {
     }
     capital += aporte;
     aportadoNominal += aporte;
-    aportadoBaseFiscal += aporte;
     totalAportado += aporte;
 
-    let retiroBruto = 0;
+    let retiro = 0;
     if (retiroFrecuencia === 'mensual') {
-      retiroBruto = retiroMensualValor;
+      retiro = retiroMensualValor;
     } else {
       const mesDelAnio = ((t - 1) % 12) + 1;
-      retiroBruto = retirosPuntualesMap[mesDelAnio] || 0;
+      retiro = retirosPuntualesMap[mesDelAnio] || 0;
     }
-
-    let impuesto = 0;
-    let retiradaNeta = 0;
     let clamped = false;
-    let gainRatio = 0;
-    let ganancia = 0;
-    const capitalAntesRetiro = capital;
-    const baseFiscalAntesRetiro = aportadoBaseFiscal;
-
-    if (retiroBruto > 0) {
-      if (retiroBruto > capital) {
-        retiroBruto = capital;
-        clamped = true;
-      }
-      gainRatio = capital > 0 ? Math.max(0, (capital - aportadoBaseFiscal) / capital) : 0;
-      ganancia = retiroBruto * gainRatio;
-      const detalle = calcularImpuestoDesglosado(ganancia);
-      impuesto = detalle.total;
-      retiradaNeta = retiroBruto - impuesto;
-      detalle.porTramo.forEach((t, i) => {
-        desgloseTramos[i].base += t.base;
-        desgloseTramos[i].impuesto += t.impuesto;
-      });
-      const baseReducida = retiroBruto - ganancia;
-
-      capital -= retiroBruto;
-      aportadoBaseFiscal = Math.max(0, aportadoBaseFiscal - baseReducida);
-
-      totalRetiradoBruto += retiroBruto;
-      totalRetiradoNeto += retiradaNeta;
-      totalImpuestos += impuesto;
+    if (retiro > capital) {
+      retiro = capital;
+      clamped = true;
     }
+    capital -= retiro;
+    totalRetirado += retiro;
 
     const rendimiento = capital * monthlyRate;
     capital += rendimiento;
+    rendimientoBrutoTotal += rendimiento;
+    gananciaAnioActual += rendimiento;
 
-    const gananciaLatente = Math.max(0, capital - aportadoBaseFiscal);
-    const capitalNetoMes = capital - calcularImpuesto(gananciaLatente);
+    let impuestoAnio = 0;
+    const esCierreAnio = (t % 12 === 0) || (t === totalMeses);
+
+    if (esCierreAnio) {
+      const detalle = calcularImpuestoDesglosado(Math.max(0, gananciaAnioActual));
+      impuestoAnio = detalle.total;
+      if (impuestoAnio > capital) impuestoAnio = capital;
+      capital -= impuestoAnio;
+      totalImpuestos += impuestoAnio;
+      detalle.porTramo.forEach((tr, i) => {
+        desgloseTramos[i].base += tr.base;
+        desgloseTramos[i].impuesto += tr.impuesto;
+      });
+      eventosAnuales.push({
+        desdeMes: inicioAnioMes,
+        hastaMes: t,
+        ganancia: gananciaAnioActual,
+        impuesto: impuestoAnio
+      });
+      gananciaAnioActual = 0;
+      inicioAnioMes = t + 1;
+    }
 
     rows.push({
       mes: t,
       capitalInicioMes,
       aporte,
-      retiroBruto,
-      impuesto,
-      retiradaNeta,
+      retiro,
       rendimiento,
+      impuestoAnio,
       capitalFin: capital,
-      capitalNetoMes,
       aportadoNominal,
-      capitalAntesRetiro,
-      baseFiscalAntesRetiro,
-      gainRatio,
-      ganancia,
-      clamped
+      clamped,
+      esCierreAnio
     });
   }
 
-  const capitalFinalBruto = capital;
-  const gananciaFinalLatente = Math.max(0, capital - aportadoBaseFiscal);
-  const capitalFinalNeto = capitalFinalBruto - calcularImpuesto(gananciaFinalLatente);
-
   return {
     rows,
-    capitalFinalBruto,
-    capitalFinalNeto,
+    capitalFinal: capital,
     totalAportado,
-    totalRetiradoBruto,
-    totalRetiradoNeto,
+    totalRetirado,
     totalImpuestos,
-    desgloseTramos
+    rendimientoBrutoTotal,
+    rendimientoNetoTotal: rendimientoBrutoTotal - totalImpuestos,
+    desgloseTramos,
+    eventosAnuales
   };
 }
 
 function renderTabla(rows) {
   const tbody = document.getElementById('tableBody');
   tbody.innerHTML = rows.map(r => `
-    <tr class="${r.clamped ? 'clamped' : ''}">
+    <tr class="${r.clamped ? 'clamped' : ''} ${r.esCierreAnio ? 'year-close' : ''}">
       <td>${r.mes}</td>
       <td>${fmt(r.capitalInicioMes)}</td>
       <td>${r.aporte > 0 ? fmt(r.aporte) : '—'}</td>
-      <td>${r.retiroBruto > 0 ? fmt(r.retiroBruto) : '—'}</td>
-      <td>${r.impuesto > 0 ? fmt(r.impuesto) : '—'}</td>
-      <td>${r.retiradaNeta > 0 ? fmt(r.retiradaNeta) : '—'}</td>
+      <td>${r.retiro > 0 ? fmt(r.retiro) : '—'}</td>
       <td>${fmtSigned(r.rendimiento)}</td>
+      <td>${r.impuestoAnio > 0 ? fmt(r.impuestoAnio) : '—'}</td>
       <td>${fmt(r.capitalFin)}</td>
     </tr>
   `).join('');
@@ -964,10 +955,9 @@ function renderChart(rows) {
 
   const n = rows.length;
   const capitalData = rows.map(r => r.capitalFin);
-  const netoData = rows.map(r => r.capitalNetoMes);
   const aportadoData = rows.map(r => r.aportadoNominal);
-  const maxVal = Math.max(...capitalData, ...netoData, ...aportadoData, 1);
-  const minVal = Math.min(0, ...capitalData, ...netoData, ...aportadoData);
+  const maxVal = Math.max(...capitalData, ...aportadoData, 1);
+  const minVal = Math.min(0, ...capitalData, ...aportadoData);
 
   const xScale = i => padding.left + (n <= 1 ? 0 : (i / (n - 1)) * plotW);
   const yScale = v => padding.top + plotH - ((v - minVal) / ((maxVal - minVal) || 1)) * plotH;
@@ -1022,13 +1012,24 @@ function renderChart(rows) {
   capitalLine.setAttribute('class', 'chart-line-capital');
   capitalLine.setAttribute('points', areaPoints);
 
-  const netoLine = document.createElementNS(SVGNS, 'polyline');
-  netoLine.setAttribute('class', 'chart-line-neto');
-  netoLine.setAttribute('points', netoData.map((v, i) => `${xScale(i)},${yScale(v)}`).join(' '));
-
   const aportadoLine = document.createElementNS(SVGNS, 'polyline');
   aportadoLine.setAttribute('class', 'chart-line-aportado');
   aportadoLine.setAttribute('points', aportadoData.map((v, i) => `${xScale(i)},${yScale(v)}`).join(' '));
+
+  // marcadores de cierre de año (donde se paga el impuesto)
+  const marcadoresGroup = document.createElementNS(SVGNS, 'g');
+  rows.forEach((r, i) => {
+    if (r.esCierreAnio && r.impuestoAnio > 0) {
+      const marker = document.createElementNS(SVGNS, 'circle');
+      marker.setAttribute('cx', xScale(i));
+      marker.setAttribute('cy', yScale(capitalData[i]));
+      marker.setAttribute('r', 3);
+      marker.setAttribute('fill', '#0a0a0a');
+      marker.setAttribute('stroke', 'var(--rust)');
+      marker.setAttribute('stroke-width', '2');
+      marcadoresGroup.appendChild(marker);
+    }
+  });
 
   const hoverLine = document.createElementNS(SVGNS, 'line');
   hoverLine.setAttribute('class', 'chart-hover-line');
@@ -1039,11 +1040,6 @@ function renderChart(rows) {
   dotCapital.setAttribute('class', 'chart-dot');
   dotCapital.setAttribute('r', 4);
   dotCapital.setAttribute('fill', '#cfa93c');
-
-  const dotNeto = document.createElementNS(SVGNS, 'circle');
-  dotNeto.setAttribute('class', 'chart-dot');
-  dotNeto.setAttribute('r', 4);
-  dotNeto.setAttribute('fill', '#5b9bd5');
 
   const dotAportado = document.createElementNS(SVGNS, 'circle');
   dotAportado.setAttribute('class', 'chart-dot');
@@ -1062,12 +1058,11 @@ function renderChart(rows) {
   svg.appendChild(gridGroup);
   svg.appendChild(areaPath);
   svg.appendChild(capitalLine);
-  svg.appendChild(netoLine);
   svg.appendChild(aportadoLine);
+  svg.appendChild(marcadoresGroup);
   svg.appendChild(axisGroup);
   svg.appendChild(hoverLine);
   svg.appendChild(dotCapital);
-  svg.appendChild(dotNeto);
   svg.appendChild(dotAportado);
   svg.appendChild(overlay);
   container.appendChild(svg);
@@ -1091,15 +1086,12 @@ function renderChart(rows) {
     dotCapital.setAttribute('cy', yScale(capitalData[idx]));
     dotCapital.style.display = 'block';
 
-    dotNeto.setAttribute('cx', x);
-    dotNeto.setAttribute('cy', yScale(netoData[idx]));
-    dotNeto.style.display = 'block';
-
     dotAportado.setAttribute('cx', x);
     dotAportado.setAttribute('cy', yScale(aportadoData[idx]));
     dotAportado.style.display = 'block';
 
-    tooltip.innerHTML = `Mes ${rows[idx].mes}<br>Bruto: ${fmt(capitalData[idx])}<br>Neto: ${fmt(netoData[idx])}<br>Aportado: ${fmt(aportadoData[idx])}`;
+    const impuestoLinea = rows[idx].impuestoAnio > 0 ? `<br>Impuesto pagado ese cierre: ${fmt(rows[idx].impuestoAnio)}` : '';
+    tooltip.innerHTML = `Mes ${rows[idx].mes}<br>Capital: ${fmt(capitalData[idx])}<br>Aportado: ${fmt(aportadoData[idx])}${impuestoLinea}`;
     tooltip.style.display = 'block';
 
     let left = x + 14;
@@ -1114,7 +1106,6 @@ function renderChart(rows) {
   overlay.addEventListener('mouseleave', () => {
     hoverLine.style.display = 'none';
     dotCapital.style.display = 'none';
-    dotNeto.style.display = 'none';
     dotAportado.style.display = 'none';
     tooltip.style.display = 'none';
   });
@@ -1130,7 +1121,6 @@ function renderChart(rows) {
   overlay.addEventListener('touchend', () => {
     hoverLine.style.display = 'none';
     dotCapital.style.display = 'none';
-    dotNeto.style.display = 'none';
     dotAportado.style.display = 'none';
     tooltip.style.display = 'none';
   });
@@ -1182,12 +1172,12 @@ function calcular() {
 
   actualizarTasaEquivalente();
 
-  document.getElementById('statBruto').textContent = fmt(result.capitalFinalBruto);
-  document.getElementById('statNeto').textContent = fmt(result.capitalFinalNeto);
   document.getElementById('statAportado').textContent = fmt(result.totalAportado);
-  document.getElementById('statRetiradoBruto').textContent = fmt(result.totalRetiradoBruto);
-  document.getElementById('statRetiradoNeto').textContent = fmt(result.totalRetiradoNeto);
+  document.getElementById('statRetirado').textContent = fmt(result.totalRetirado);
+  document.getElementById('statRendimientoBruto').textContent = fmtSigned(result.rendimientoBrutoTotal);
   document.getElementById('statImpuestos').textContent = fmt(result.totalImpuestos);
+  document.getElementById('statRendimientoNeto').textContent = fmtSigned(result.rendimientoNetoTotal);
+  document.getElementById('statCapitalFinal').textContent = fmt(result.capitalFinal);
 
   renderTabla(result.rows);
   renderTramos(result.desgloseTramos);
@@ -1207,31 +1197,23 @@ function construirExplicacion() {
   if (!lastResult) return '';
 
   const capitalInicial = parseNum(document.getElementById('capitalInicial').value);
-  const retirosReales = lastResult.rows.filter(r => r.retiroBruto > 0);
+  const eventos = lastResult.eventosAnuales;
 
   let html = `
-    <p>Cuando retiras dinero, ese importe no es "beneficio puro": es una porción de tu capital total, que en ese momento está formado en parte por lo que aportaste y en parte por la ganancia acumulada. El retiro se reparte en la misma proporción, y solo la parte de ganancia tributa.</p>
+    <p>Cada mes generas una ganancia (o pérdida) al operar. Como en la práctica estás vendiendo para materializar ese rendimiento, Hacienda considera que la ganancia ya está realizada ese mismo año, se retire el dinero o no. Al cerrar cada año se suman todas las ganancias y pérdidas mensuales, y se aplican los tramos del IRPF sobre ese resultado neto anual.</p>
   `;
 
-  if (retirosReales.length === 0) {
-    html += `<p>Todavía no hay ningún retiro configurado en la simulación. Añade uno en el bloque 4 para ver aquí el ejemplo numérico.</p>`;
+  if (eventos.length === 0) {
+    html += `<p>Todavía no hay ningún año completo simulado.</p>`;
   } else {
-    retirosReales.forEach(r => {
-      const pctGanancia = (r.gainRatio * 100).toFixed(1);
-      const capitalAportadoEnRetiro = r.retiroBruto - r.ganancia;
+    eventos.forEach(ev => {
+      const duracionAnio = ev.hastaMes - ev.desdeMes + 1;
       html += `
         <div class="example-block">
-          <strong>Retiro en el mes ${r.mes}</strong><br>
-          Capital total justo antes del retiro: ${fmt(r.capitalAntesRetiro)}<br>
-          &nbsp;&nbsp;· De los cuales, aportado (coste): ${fmt(r.baseFiscalAntesRetiro)}<br>
-          &nbsp;&nbsp;· De los cuales, ganancia: ${fmt(r.capitalAntesRetiro - r.baseFiscalAntesRetiro)} (${pctGanancia}% del total)<br>
-          <br>
-          Retiras: ${fmt(r.retiroBruto)}, con la misma proporción:<br>
-          &nbsp;&nbsp;· Capital recuperado (exento): ${fmt(capitalAportadoEnRetiro)}<br>
-          &nbsp;&nbsp;· Ganancia sujeta a impuesto: ${fmt(r.ganancia)}<br>
-          <br>
-          Impuesto por tramos sobre esos ${fmt(r.ganancia)}: ${fmt(r.impuesto)}<br>
-          Retirada neta: ${fmt(r.retiradaNeta)}
+          <strong>Año: meses ${ev.desdeMes} a ${ev.hastaMes}</strong><br>
+          Ganancia generada ese periodo (suma de ${duracionAnio} meses): ${fmtSigned(ev.ganancia)}<br>
+          Impuesto por tramos sobre esa ganancia: ${fmt(ev.impuesto)}<br>
+          Ganancia neta de ese año: ${fmtSigned(ev.ganancia - ev.impuesto)}
         </div>
       `;
     });
@@ -1239,8 +1221,7 @@ function construirExplicacion() {
 
   html += `
     <p class="caveat">
-      <strong>¿Coincide con Hacienda?</strong> Si tu capital inicial (${fmt(capitalInicial)}) es la única entrada de dinero — es decir, no hay aportaciones periódicas en distintos momentos — esto coincide exactamente con el criterio real: solo existe un único "lote" de compra, así que aplicar FIFO (vender primero lo más antiguo) da el mismo resultado que este cálculo proporcional.<br><br>
-      Si además haces aportaciones periódicas en fechas distintas, Hacienda aplicaría FIFO real sobre cada aportación individual (con su propio precio de compra), mientras que este simulador promedia todo el capital aportado como si fuera un coste medio único. En la práctica el resultado suele ser parecido, pero no siempre idéntico.
+      <strong>¿Coincide con Hacienda?</strong> Sí, en la mecánica general: las ganancias y pérdidas patrimoniales realizadas en un año se compensan entre sí y tributan juntas, por tramos, en la base del ahorro de ese ejercicio — igual que aquí. En la vida real el impuesto no se descuenta automáticamente cada mes 12: se paga en la declaración de la renta del año siguiente (normalmente entre abril y junio), así que durante unos meses seguirías teniendo ese dinero disponible antes de pagarlo. Tampoco tiene en cuenta la compensación de pérdidas de años anteriores (en España se pueden arrastrar hasta 4 años), ni otros rendimientos del ahorro (dividendos, intereses...) que declares ese mismo año junto con esta ganancia. Tu capital inicial (${fmt(capitalInicial)}) no tributa: solo lo hace la ganancia generada a partir de él.
     </p>
   `;
 
